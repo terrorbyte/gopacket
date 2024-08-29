@@ -105,18 +105,18 @@ func addIPv6JumboOption(ip6 *IPv6) {
 func setIPv6PayloadJumboLength(hbh []byte) error {
 	pLen := len(hbh)
 	if pLen < 8 {
-		//HopByHop is minimum 8 bytes
+		// HopByHop is minimum 8 bytes
 		return fmt.Errorf("Invalid IPv6 payload (length %d)", pLen)
 	}
 	hbhLen := int((hbh[1] + 1) * 8)
 	if hbhLen > pLen {
 		return fmt.Errorf("Invalid hop-by-hop length (length: %d, payload: %d", hbhLen, pLen)
 	}
-	offset := 2 //start with options
+	offset := 2 // start with options
 	for offset < hbhLen {
 		opt := hbh[offset]
 		if opt == 0 {
-			//Pad1
+			// Pad1
 			offset++
 			continue
 		}
@@ -605,6 +605,35 @@ type IPv6Fragment struct {
 
 // LayerType returns LayerTypeIPv6Fragment.
 func (i *IPv6Fragment) LayerType() gopacket.LayerType { return LayerTypeIPv6Fragment }
+
+// SerializeTo writes the serialized form of this layer into the
+// SerializationBuffer, implementing gopacket.SerializableLayer.
+// See the docs for gopacket.SerializableLayer for more info.
+func (i *IPv6Fragment) SerializeTo(b gopacket.SerializeBuffer, opts gopacket.SerializeOptions) error {
+	var bytes []byte
+	var err error
+
+	bytes, err = b.PrependBytes(8)
+	if err != nil {
+		return err
+	}
+	bytes[0] = uint8(i.NextHeader)
+	if opts.FixLengths {
+		bytes[1] = 0
+	} else {
+		bytes[1] = i.Reserved1
+	}
+	offlg := i.FragmentOffset << 3
+	if !opts.FixLengths {
+		offlg |= uint16((i.Reserved2 << 1) & 0x6)
+	}
+	if i.MoreFragments {
+		offlg |= 0x1
+	}
+	binary.BigEndian.PutUint16(bytes[2:], offlg)
+	binary.BigEndian.PutUint32(bytes[4:], i.Identification)
+	return nil
+}
 
 func decodeIPv6Fragment(data []byte, p gopacket.PacketBuilder) error {
 	if len(data) < 8 {
